@@ -1,0 +1,13 @@
+{
+    "name": "prototype",
+    "displayName": "Docs Prototype",
+    "blocks": [
+        {
+            "widget": "gitsense-docs.analyzer",
+            "cols": 12,
+            "params": {
+                "path": "README.md"
+            }
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+{
+    "blocks": [
+        { 
+            "scope": "sentence", 
+            "default": true 
+        }
+    ],
+    "models": [
+        { 
+            "name": "llama-3-70b", 
+            "providers": [
+                { 
+                    "name": "Groq", 
+                    "default": true
+                }
+            ]
+        }
+    ],
+    "prompts": [
+        { 
+            "name": "English tech writer",
+            "fileName": "english-tech-writer.json",
+            "default": true
+        }
+    ],
+    "defaultMinWords": 1,
+    "defaultTemperature": 0.5
+}
