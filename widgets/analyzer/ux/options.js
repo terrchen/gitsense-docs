@@ -1,5 +1,5 @@
-const h = require("../../../../app/utils/html.js");
-const DropDownMenu = require("../../../../app/components/drop-down-menu.js");
+const h = require("../../../../../app/utils/html.js");
+const DropDownMenu = require("../../../../../app/components/drop-down-menu.js");
 
 function Options(widget, callbacks) {
     const {
@@ -187,12 +187,8 @@ function Options(widget, callbacks) {
             const models = [];
     
             options.models.forEach(model => {
-                const { name: modelName, providers } = model;
-    
-                providers.forEach(provider => {
-                    const { name: providerName, default: selected } = provider;
-                    models.push({ value: `${modelName}`, selected });
-                });
+                const { name: modelName, default: selected } = model;
+                models.push({ value: `${modelName}`, selected });
             });
     
             return models;

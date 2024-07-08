@@ -1,22 +1,23 @@
 const sqlite3 = require("sqlite3").verbose();
 const { existsSync, readFileSync } = require("fs");
 
-const SQLITE_DOCS_DB = `${__dirname}/docs.sqlite3`
-const SQLITE_TABLES_SQL = `${__dirname}/sqlite-tables.sql`;
+const DOCS_DB = `${__dirname}/docs.sqlite3`
+const DOCS_TABLES_SQL = `${__dirname}/sqlite-docs-tables.sql`;
+const CACHE_TABLES_SQL = `${__dirname}/sqlite-cache-tables.sql`;
 
 async function init() {
-    if ( existsSync(SQLITE_DOCS_DB) ) {
+    if ( existsSync(DOCS_DB) ) {
         return connect();
-        console.log(`No need to initialize database ${SQLITE_DOCS_DB} as it already exists.`);
+        console.log(`No need to initialize database ${DOCS_DB} as it already exists.`);
         return;
     }
 
-    console.log(`Initializing database ${SQLITE_DOCS_DB}`);
+    console.log(`Initializing database ${DOCS_DB}`);
     const db = connect();
-    const create = readFileSync(SQLITE_TABLES_SQL, "utf-8");
+    const create = readFileSync(DOCS_TABLES_SQL, "utf-8");
 
     try {
-        console.log(`Executing SQL in ${SQLITE_TABLES_SQL}`);
+        console.log(`Executing SQL in ${DOCS_TABLES_SQL}`);
         await execAsync(db, create);
     } catch ( error ) {
         throw(`ERROR: Failed to initialize database\n${create}\n${error}`);
@@ -27,14 +28,14 @@ async function init() {
 }
 
 function connect() {
-    console.log(`Connecting to ${SQLITE_DOCS_DB}`);
+    console.log(`Connecting to ${DOCS_DB}`);
 
     try {
-        const db = new sqlite3.Database(SQLITE_DOCS_DB, { verbose: false });
+        const db = new sqlite3.Database(DOCS_DB, { verbose: false });
         console.log(`Successfully connected`);
         return db;
     } catch (error) {
-        throw(`ERROR: Unable to connect to docs database ${SQLITE_DOCS_DB}\n${error}`); 
+        throw(`ERROR: Unable to connect to docs database ${DOCS_DB}\n${error}`); 
     }
 }
 
@@ -132,9 +133,12 @@ function stmtAllAsync(stmt, params = []) {
 function serializeAsync(db, operations) {
     return new Promise((resolve, reject) => {
         db.serialize(() => {
-            operations()
-                .then(resolve)
-                .catch(reject);
+            try {
+                operations();
+                resolve();
+            } catch ( err ) {
+                reject(err); 
+            }
         });
     });
 }
@@ -147,5 +151,6 @@ module.exports = {
     init, 
     prepareAsync, 
     runAsync, 
-    stmtAllAsync 
+    stmtAllAsync,
+    serializeAsync
 };

@@ -11,15 +11,24 @@
             "providers": [
                 { 
                     "name": "Groq", 
-                    "default": true
+                    "modelId": ""
                 }
-            ]
+            ],
+            "default": true
         }
     ],
     "prompts": [
         { 
             "name": "English tech writer",
             "fileName": "english-tech-writer.json",
+            "default": true
+        }
+    ],
+    "providers": [
+        { 
+            "name": "Groq",
+            "maxWorkers": 1,
+            "minRateLimitRequestTokens": 1024,
             "default": true
         }
     ],

@@ -1,9 +1,9 @@
 const cheerio = require("cheerio");
 const crypto = require("crypto");
 const MarkDownIt = require("markdown-it");
-const { sleep }  = require("../../../../libs/utils.js");
+const { sleep }  = require("../../../../../libs/utils.js");
 const sp = require("sentence-splitter");
-const h = require("../../../../app/utils/html.js");
+const h = require("../../../../../app/utils/html.js");
 const cssFile = "gs-docs.css";
 const className = "gs-docs";
 
@@ -72,8 +72,6 @@ function MarkdownAnalyzer(widget, path, config) {
 
         const { elem } = block;
 
-        console.log(elem);
-
         analyzing = true;
         elem.style.backgroundColor = "yellow";
         await analyzeBlock(block);
@@ -87,8 +85,6 @@ function MarkdownAnalyzer(widget, path, config) {
     async function analyzeBlock(block) {
         const { elem, hash: blockHash } = block;
 
-        console.log("analyze block");
-        console.log(block);
         console.log(elem.innerText);
 
         const body = {

@@ -1,21 +1,13 @@
 const crypto = require("crypto");
 const { OpenAI } = require("openai");
 const { existsSync, readFileSync, readdirSync, statSync } = require("fs");
-const { resolve, dirname, join: joinPaths } = require("path");
+const { resolve, dirname } = require("path");
 const { sleep }  = require("../../../../libs/utils.js");
 const { init: initDB, connect, allAsync, prepareAsync, getAsync, runAsync, stmtAllAsync } = require("./sqlite.js");
-
-const MODELS = {};
-const PROMPTS = {};
-const BLOCKS = {};
+const { init: initInit, models, prompts, blocks, readOptionsFile } = require("./init.js");
 
 async function init() {
-    const db = await initDB();
-    await initGlobalModels(db);
-    await initGlobalPrompts(db);
-    await initGlobalBlocks(db);
-    db.close();
-    console.log({ BLOCKS, PROMPTS, MODELS });
+    await initInit();
 }
 
 function getData(req) {
@@ -74,24 +66,10 @@ function getMarkdown(params) {
     }
 }
 
-function readOptionsFile() { 
-    const file = joinPaths(__dirname, "options.json");
-
-    if ( !existsSync(file) )
-        return null;
-
-    const json = readFileSync(file, "utf8");
-    let options = null;
-
-    try {
-        return JSON.parse(json);
-    } catch ( err ) {
-        throw(`ERROR: Invalid JSON file ${file}:\n${err}`);
-    }
-}
-
 async function getAISummary(params) {
     const { 
+        priority=0,
+        "thread-id": threadId=0,
         "block-type": blockType,
         "block-hash": blockHash,
         "block-text": blockText,
@@ -113,7 +91,7 @@ async function getAISummary(params) {
         return { "status": "failed", "error": "Server side error" };
     }
 
-    if ( blockText !== null && !BLOCKS[blockHash] ) {
+    if ( blockText !== null && !blocks[blockHash] ) {
         try {
             await insertBlock(db, blockType, blockHash, blockText);
         } catch ( err ) {
@@ -121,14 +99,18 @@ async function getAISummary(params) {
         }
     }
 
-    const blockId = BLOCKS[blockHash].id;
-    const modelId = MODELS[model].id;
-    const promptId = PROMPTS[prompt].id;
+    const blockId = blocks[blockHash].id;
+    const promptId = prompts[prompt].id;
 
-    let match = await getBlockAISummary(db, blockId, modelId, promptId, temperature);
+    if ( !blockId || !promptId ) {
+        console.log(`SERIOUS: We have a logic error. Block id: ${blockId}  promptId: ${promptId}`);
+        return { "status": "failed", "error": "Server side error" };
+    } 
+
+    let match = await getChatBlockSummary(db, threadId, blockId, model, promptId, temperature);
 
     if ( !match )
-        match = await insertBlockAI(db, blockId, modelId, promptId, temperature); 
+        match = await inserChatBlocks(db, priority, threadId, blockId, model, promptId, temperature); 
 
     return { status: "success", data: match };
 
@@ -152,12 +134,12 @@ async function getAISummary(params) {
         }
 
         function validateModel() {
-            if ( !MODELS[model] )
+            if ( !models[model] )
                 return `Nothing known about model ${model}`;
         }
 
         function validatePrompt() {
-            if ( !PROMPTS[prompt] )
+            if ( !prompts[prompt] )
                 return `Nothing known about prompt ${prompt}`;
         }
 
@@ -225,140 +207,6 @@ function getHashesSummary(hashes) {
     }
 }
 
-async function initGlobalModels(db) {
-    const model2Id = await mapDBModels(db);
-    const { models } = readOptionsFile();
-
-    for ( let i = 0; i < models.length; i++ ) {
-        const { name: model, vendors } = models[i];
-
-        if ( MODELS[model] ) 
-            throw(`ERROR: A model with the name "${model}" has already been defined`);
-
-        if ( !model2Id[model] ) {
-            console.log(`Inserting model "${model}"`);
-            const id = await insertModel(db, model);
-            console.log(`Successfully inserted with id ${id}`);
-            model2Id[model] = id;
-        }
-
-        MODELS[model] = { id: model2Id[model], model };
-    }
-
-    async function mapDBModels() {
-        const select = `SELECT id, model FROM models`;
-        const rows = await allAsync(db, select);
-        const model2Id = {};
-
-        rows.forEach(row => {
-            const { id, model } = row;
-            model2Id[model] = id;
-        });
-
-        return model2Id;
-    }
-}
-
-async function initGlobalPrompts(db) {
-    const hash2Id = await mapDBPrompts(db);
-    const { prompts } = readOptionsFile();
-
-    for ( let i = 0; i < prompts.length; i++ ) {
-        const { name, fileName } = prompts[i];
-
-        if ( PROMPTS[name] ) 
-            throw(`ERROR: A prompt with the name "${name}" has already been defined`);
-
-        const file = joinPaths(__dirname, "prompts", fileName);
-
-        if ( !existsSync(file) )
-            throw(`ERROR: No "${name}" prompt file named "${name}" exists at ${file}!`);
-
-        let json = null;
-
-        try {
-            json = readFileSync(file);
-        } catch ( err ) {
-            throw(`ERROR: Failed to read prompt file ${file}: ${err}`);
-        }
-
-        let prompt = null;
-
-        try {
-            prompt = JSON.parse(json);
-        } catch ( err ) {
-            throw(`ERROR: Prompt file ${file} contains an invalid JSON: ${err}`);
-        }
-
-        const hash = crypto.createHash("sha256").update(JSON.stringify(prompt)).digest("hex");
-
-        if ( !hash2Id[hash] ) {
-            console.log(`Inserting prompt "${name}"`);
-            const id = await insertPrompt(db, hash, JSON.stringify(prompt));
-            console.log(`Successfully inserted with id ${id}`);
-            hash2Id[hash] = id;
-        }
-
-        PROMPTS[name] = { id: hash2Id[hash], name, hash };
-    }
-
-    async function mapDBPrompts() {
-        const select = `SELECT id, hash FROM prompts`;
-        const rows = await allAsync(db, select);
-        const hash2Id = {};
-
-        rows.forEach(row => {
-            const { id, hash } = row;
-            hash2Id[hash] = id;
-        });
-
-        return hash2Id;
-    }
-}
-
-async function initGlobalBlocks(db) {
-    const select = `SELECT id, hash FROM blocks`;
-    const rows = await allAsync(db, select);
-    const model2Id = {};
-
-    rows.forEach(row => {
-        const { hash} = row;
-        BLOCKS[hash] = row;
-    });
-}
-
-async function insertModel(db, model) {
-    const insert = `
-        INSERT OR IGNORE INTO models(
-            model, 
-            created_at, 
-            updated_at
-        ) VALUES(
-            ?, 
-            DATETIME('now'), 
-            DATETIME('now')
-        )
-    `;
-
-    try {
-        const result = await runAsync(db, insert, [model]);
-        return result.lastID;
-    } catch ( err ) {
-        throw(`ERROR: Failed to insert prompt:\n${insert}\n${err}`);
-    }
-}
-
-async function insertPrompt(db, hash, prompt) {
-    const insert = "INSERT OR IGNORE INTO prompts(hash, prompt, created_at) VALUES(?, ?, DATETIME('now'))";
-
-    try {
-        const result = await runAsync(db, insert, [hash, prompt]);
-        return result.lastID;
-    } catch ( err ) {
-        throw(`ERROR: Failed to insert prompt:\n${insert}\n${err}`);
-    }
-}
-
 async function insertBlock(db, type, hash, block) {
     const insert = `
         INSERT OR IGNORE INTO blocks(
@@ -376,7 +224,7 @@ async function insertBlock(db, type, hash, block) {
     try {
         const result = await runAsync(db, insert, [type, hash, block]);
         const id = result.lastID; 
-        BLOCKS[hash] = { hash, id };
+        blocks[hash] = { hash, id };
         console.log(`Created new block #${id}`);
         return id;
     } catch ( err ) {
@@ -384,19 +232,23 @@ async function insertBlock(db, type, hash, block) {
     }
 }
 
-async function insertBlockAI(db, blockId, modelId, promptId, temperature) {
+async function inserChatBlocks(db, priority, threadId, blockId, modelId, promptId, temperature) {
     const insert = `
-        INSERT OR IGNORE INTO blocks_ai(
+        INSERT OR IGNORE INTO chat_blocks(
             id,
+            priority,
+            thread_id,
             block_id,
-            model_id,
+            model,
             prompt_id,
             temperature,
             summary,
             created_at,
             updated_at
         ) VALUES(
-            (SELECT IFNULL(max(id),0)+1 FROM blocks_ai),
+            (SELECT IFNULL(max(id),0)+1 FROM chat_blocks),
+            ?,
+            ?,
             ?,
             ?,
             ?,
@@ -407,25 +259,25 @@ async function insertBlockAI(db, blockId, modelId, promptId, temperature) {
         )`;
 
     try {
-        const result = await runAsync(db, insert, [blockId, modelId, promptId, temperature]);
-        const match = await getBlockAISummary(db, blockId, modelId, promptId, temperature);
-        console.log(`Created or used existing block ai #${match.id}`);
+        const result = await runAsync(db, insert, [priority, threadId, blockId, modelId, promptId, temperature]);
+        const match = await getChatBlockSummary(db, blockId, modelId, promptId, temperature);
+        console.log(`Created or used existing block chat #${match.id}`);
         return match;
     } catch ( err ) {
-        throw(`ERROR: Failed to insert block ai:\n${insert}\n${err}`);
+        throw(`ERROR: Failed to insert block chat:\n${insert}\n${err}`);
     }
 }
 
-async function getBlockAISummary(db, blockId, modelId, promptId, temperature) {
+async function getChatBlockSummary(db, blockId, modelId, promptId, temperature) {
     const select = `
         SELECT
             id,
             summary
         FROM 
-            blocks_ai 
+            chat_blocks 
         WHERE 
             block_id=? AND
-            model_id=? AND
+            model=? AND
             prompt_id=? AND
             temperature=?
     `;

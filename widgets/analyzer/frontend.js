@@ -1,6 +1,6 @@
 const h = require("../../../../app/utils/html.js");
-const { Options } = require("./options.js");
-const { MarkdownAnalyzer } = require("./markdown_analyzer.js");
+const { Options } = require("./ux/options.js");
+const { MarkdownAnalyzer } = require("./ux/markdown_analyzer.js");
 const { sleep }  = require("../../../../libs/utils.js");
 
 let analyzing = false;
